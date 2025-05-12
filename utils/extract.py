@@ -1,18 +1,86 @@
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-import logging
 import time
 from datetime import datetime
 import re
+import os
 from typing import List, Dict, Any, Optional, Tuple
+from colorama import Fore, Back, Style, init
+import random
+import sys
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Initialize colorama
+init(autoreset=True)
+
+# ASCII Art Banner
+banner = """
+╔═══════════════════════════════════════════════════════════════════╗
+║                                                                   ║
+║  ███████╗ █████╗ ███████╗██╗  ██╗██╗ ██████╗ ███╗   ██╗           ║
+║  ██╔════╝██╔══██╗██╔════╝██║  ██║██║██╔═══██╗████╗  ██║           ║
+║  █████╗  ███████║███████╗███████║██║██║   ██║██╔██╗ ██║           ║
+║  ██╔══╝  ██╔══██║╚════██║██╔══██║██║██║   ██║██║╚██╗██║           ║
+║  ██║     ██║  ██║███████║██║  ██║██║╚██████╔╝██║ ╚████║           ║
+║  ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝           ║
+║                                                                   ║
+║  ███████╗████████╗██╗   ██╗██████╗ ██╗ ██████╗                    ║
+║  ██╔════╝╚══██╔══╝██║   ██║██╔══██╗██║██╔═══██╗                   ║
+║  ███████╗   ██║   ██║   ██║██║  ██║██║██║   ██║                   ║
+║  ╚════██║   ██║   ██║   ██║██║  ██║██║██║   ██║                   ║
+║  ███████║   ██║   ╚██████╔╝██████╔╝██║╚██████╔╝                   ║
+║  ╚══════╝   ╚═╝    ╚═════╝ ╚═════╝ ╚═╝ ╚═════╝                    ║
+║                                                                   ║
+║  ███████╗ ██████╗██████╗  █████╗ ██████╗ ███████╗██████╗          ║
+║  ██╔════╝██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗         ║
+║  ███████╗██║     ██████╔╝███████║██████╔╝█████╗  ██████╔╝         ║
+║  ╚════██║██║     ██╔══██╗██╔══██║██╔═══╝ ██╔══╝  ██╔══██╗         ║
+║  ███████║╚██████╗██║  ██║██║  ██║██║     ███████╗██║  ██║         ║
+║  ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚══════╝╚═╝  ╚═╝         ║
+║                                                                   ║
+╚═══════════════════════════════════════════════════════════════════╝
+"""
+
+# Function to display fancy log messages
+def log_message(message, level="INFO", emoji=""):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    if level == "INFO":
+        color = Fore.CYAN
+        level_str = f"{color}[INFO]{Style.RESET_ALL}"
+    elif level == "SUCCESS":
+        color = Fore.GREEN
+        level_str = f"{color}[SUCCESS]{Style.RESET_ALL}"
+    elif level == "WARNING":
+        color = Fore.YELLOW
+        level_str = f"{color}[WARNING]{Style.RESET_ALL}"
+    elif level == "ERROR":
+        color = Fore.RED
+        level_str = f"{color}[ERROR]{Style.RESET_ALL}"
+    elif level == "PROCESSING":
+        color = Fore.MAGENTA
+        level_str = f"{color}[PROCESSING]{Style.RESET_ALL}"
+    else:
+        color = Fore.WHITE
+        level_str = f"{color}[{level}]{Style.RESET_ALL}"
+    
+    print(f"{timestamp} {level_str} {emoji} {message}")
+
+# Function to show a spinner effect
+def show_spinner(seconds, message):
+    spinner = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷']
+    for _ in range(int(seconds * 5)):
+        for char in spinner:
+            print(f"\r{Fore.CYAN}{message} {char}{Style.RESET_ALL}", end='', flush=True)
+            time.sleep(0.2)
+    print()
+
+# Function to display progress bar
+def show_progress_bar(current, total, prefix="", suffix="", length=50):
+    percent = (current / total) * 100 if total > 0 else 0
+    filled_length = int(length * current // total)
+    bar = Fore.GREEN + '█' * filled_length + Fore.WHITE + '░' * (length - filled_length)
+    return f"{prefix} [{bar}{Style.RESET_ALL}] {current}/{total} {suffix} ({percent:.1f}%)"
 
 def get_page_content(url: str, max_retries: int = 3, retry_delay: int = 2) -> Optional[BeautifulSoup]:
     """
@@ -30,22 +98,30 @@ def get_page_content(url: str, max_retries: int = 3, retry_delay: int = 2) -> Op
     
     while retries < max_retries:
         try:
-            logger.info(f"Fetching page: {url}")
+            log_message(f"Fetching page: {url}", "PROCESSING", "🌐")
+            
+            # Show spinner while waiting for response
+            print(f"\r{Fore.CYAN}Connecting to server... ⏳{Style.RESET_ALL}", end='', flush=True)
+            
             response = requests.get(url, timeout=10)
+            print()  # Clear the spinner line
             
             if response.status_code == 200:
+                log_message(f"Successfully fetched page: {url}", "SUCCESS", "✅")
                 return BeautifulSoup(response.content, 'html.parser')
             else:
-                logger.warning(f"Failed to fetch {url}. Status code: {response.status_code}")
+                log_message(f"Failed to fetch {url}. Status code: {response.status_code}", "WARNING", "⚠️")
                 
         except requests.RequestException as e:
-            logger.error(f"Error fetching {url}: {e}")
+            log_message(f"Error fetching {url}: {e}", "ERROR", "❌")
         
         retries += 1
-        logger.info(f"Retrying ({retries}/{max_retries}) after {retry_delay} seconds...")
-        time.sleep(retry_delay)
+        log_message(f"Retrying ({retries}/{max_retries}) after {retry_delay} seconds...", "INFO", "🔄")
+        
+        # Show spinner during retry delay
+        show_spinner(retry_delay, "Waiting before retry")
     
-    logger.error(f"Max retries reached for {url}. Giving up.")
+    log_message(f"Max retries reached for {url}. Giving up.", "ERROR", "🛑")
     return None
 
 def extract_product_details(product_div: BeautifulSoup) -> Dict[str, Any]:
@@ -102,7 +178,7 @@ def extract_product_details(product_div: BeautifulSoup) -> Dict[str, Any]:
             product_data["Gender"] = gender_elem.text.strip()
             
     except Exception as e:
-        logger.error(f"Error extracting product details: {e}")
+        log_message(f"Error extracting product details: {e}", "ERROR", "❌")
     
     return product_data
 
@@ -122,12 +198,14 @@ def get_total_pages(soup: BeautifulSoup) -> int:
             # Extract "X of Y" format
             match = re.search(r'(\d+) of (\d+)', pagination_info.text)
             if match:
-                return int(match.group(2))
+                total_pages = int(match.group(2))
+                log_message(f"Found {total_pages} total pages of products", "SUCCESS", "📚")
+                return total_pages
     except Exception as e:
-        logger.error(f"Error getting total pages: {e}")
+        log_message(f"Error getting total pages: {e}", "ERROR", "❌")
     
     # Default to 50 pages if we can't determine
-    logger.warning("Could not determine total pages, defaulting to 50")
+    log_message("Could not determine total pages, defaulting to 50", "WARNING", "⚠️")
     return 50
 
 def extract_products_from_page(page_url: str) -> Tuple[List[Dict[str, Any]], Optional[int]]:
@@ -153,14 +231,37 @@ def extract_products_from_page(page_url: str) -> Tuple[List[Dict[str, Any]], Opt
     if '/page' not in page_url:
         total_pages = get_total_pages(soup)
     
+    # Display extraction start message
+    page_number = page_url.split('page')[-1] if '/page' in page_url else "1"
+    log_message(f"Extracting products from page {page_number}", "PROCESSING", "🔍")
+    
     # Extract all product cards
     product_details_divs = soup.select('.product-details')
     
-    for product_div in product_details_divs:
+    # Show progress for extraction
+    total_products = len(product_details_divs)
+    log_message(f"Found {total_products} products on page {page_number}", "INFO", "📋")
+    
+    for i, product_div in enumerate(product_details_divs):
+        # Display progress periodically
+        if total_products > 10 and i % 5 == 0:
+            progress = int((i / total_products) * 100)
+            sys.stdout.write(f"\r{Fore.CYAN}Extracting product data... {progress}% complete {Fore.GREEN}{'█' * (progress//5)}{Style.RESET_ALL}")
+            sys.stdout.flush()
+            
         product_data = extract_product_details(product_div)
         products.append(product_data)
     
-    logger.info(f"Extracted {len(products)} products from {page_url}")
+    # Clear progress line if we printed one
+    if total_products > 10:
+        sys.stdout.write("\r" + " " * 80 + "\r")
+        sys.stdout.flush()
+    
+    # Success message with random emoji
+    emoji_options = ["📦", "🛍️", "🎁", "📝", "💼"]
+    log_message(f"Successfully extracted {len(products)} products from page {page_number}", 
+               "SUCCESS", random.choice(emoji_options))
+    
     return products, total_pages
 
 def scrape_all_products(base_url: str = 'https://fashion-studio.dicoding.dev', 
@@ -176,9 +277,23 @@ def scrape_all_products(base_url: str = 'https://fashion-studio.dicoding.dev',
         DataFrame containing all scraped products
     """
     all_products = []
+    start_time = time.time()
+    
+    # Clear screen and show banner
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print(Fore.GREEN + banner + Style.RESET_ALL)
+    
+    # Display header info
+    print(f"{Fore.YELLOW}{'═' * 70}{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}  Target Website: {Fore.WHITE}{base_url}{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}  Max Pages: {Fore.WHITE}{max_pages}{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}  Start Time: {Fore.WHITE}{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}  [👤] Code brewed by: {Fore.GREEN}notsuperganang 🔥{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}{'═' * 70}{Style.RESET_ALL}\n")
     
     try:
         # Start with the first page
+        log_message("Starting extraction process", "INFO", "🚀")
         first_page_url = f"{base_url}"
         products, total_pages = extract_products_from_page(first_page_url)
         all_products.extend(products)
@@ -189,7 +304,10 @@ def scrape_all_products(base_url: str = 'https://fashion-studio.dicoding.dev',
         else:
             pages_to_scrape = max_pages
             
-        logger.info(f"Found {pages_to_scrape} total pages to scrape")
+        log_message(f"Planning to scrape {pages_to_scrape} total pages", "INFO", "📊")
+        
+        # Print divider
+        print(f"{Fore.CYAN}{'─' * 70}{Style.RESET_ALL}")
         
         # Scrape remaining pages
         for page_num in range(2, pages_to_scrape + 1):
@@ -197,11 +315,29 @@ def scrape_all_products(base_url: str = 'https://fashion-studio.dicoding.dev',
             products, _ = extract_products_from_page(page_url)
             all_products.extend(products)
             
+            # Show overall progress
+            elapsed = time.time() - start_time
+            progress_percent = (page_num / pages_to_scrape) * 100
+            rate = page_num / elapsed if elapsed > 0 else 0
+            remaining = (pages_to_scrape - page_num) / rate if rate > 0 else 0
+            
+            print(show_progress_bar(
+                page_num, 
+                pages_to_scrape, 
+                prefix=f"{Fore.CYAN}Overall Progress:", 
+                suffix=f"pages {Fore.YELLOW}(Est. {remaining:.1f}s remaining)"
+            ))
+            
             # Add a small delay to be respectful to the server
-            time.sleep(1)
+            if page_num < pages_to_scrape:
+                delay = random.uniform(0.8, 1.5)
+                show_spinner(delay, "Respecting server limits")
+            
+        # Print final divider    
+        print(f"{Fore.CYAN}{'─' * 70}{Style.RESET_ALL}")
             
     except Exception as e:
-        logger.error(f"Error during scraping: {e}")
+        log_message(f"Error during scraping: {e}", "ERROR", "❌")
     
     # Convert to DataFrame
     df = pd.DataFrame(all_products)
@@ -209,18 +345,37 @@ def scrape_all_products(base_url: str = 'https://fashion-studio.dicoding.dev',
     # Add timestamp
     df['timestamp'] = datetime.now().isoformat()
     
-    logger.info(f"Total products scraped: {len(df)}")
+    # Display final stats
+    total_time = time.time() - start_time
+    products_per_second = len(df) / total_time if total_time > 0 else 0
+    
+    print(f"\n{Fore.GREEN}{'═' * 70}{Style.RESET_ALL}")
+    log_message(f"Scraping completed! Total products collected: {len(df)}", "SUCCESS", "🏆")
+    log_message(f"Time taken: {total_time:.2f} seconds ({products_per_second:.2f} products/sec)", "INFO", "⏱️")
+    
     return df
 
 def main():
     """Main function to run the extraction process."""
-    df = scrape_all_products()
+    try:
+        df = scrape_all_products()
+        
+        # Save raw data to CSV for debugging/backup
+        output_file = f'fashion_products_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        df.to_csv(output_file, index=False)
+        log_message(f"Raw data saved to '{output_file}'", "SUCCESS", "💾")
+        
+        # Display completion message
+        print(f"\n{Fore.GREEN}★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}★  EXTRACTION COMPLETE: Collected {len(df)} products!        {Style.RESET_ALL}")
+        print(f"{Fore.GREEN}★  Data is ready for transformation & loading stages!       {Style.RESET_ALL}")
+        print(f"{Fore.GREEN}★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★{Style.RESET_ALL}")
+        
+        return df
     
-    # Save raw data to CSV for debugging/backup
-    df.to_csv('raw_products.csv', index=False)
-    logger.info("Raw data saved to 'raw_products.csv'")
-    
-    return df
+    except Exception as e:
+        log_message(f"Critical error in main extraction process: {e}", "ERROR", "💥")
+        return pd.DataFrame()  # Return empty DataFrame in case of error
 
 if __name__ == "__main__":
     main()
