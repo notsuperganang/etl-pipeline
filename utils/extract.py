@@ -184,7 +184,7 @@ def extract_product_details(product_div: BeautifulSoup) -> Dict[str, Any]:
 
 def get_total_pages(soup: BeautifulSoup) -> int:
     """
-    Extract the total number of pages from the pagination information.
+    Extract the total number of pages from the pagination information. IN CASE THERE ARE MORE THAN 50 PAGES, IT WILL DEFAULT TO 50. 
     
     Args:
         soup: BeautifulSoup object of the page containing pagination
