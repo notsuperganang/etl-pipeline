@@ -3,11 +3,9 @@ import numpy as np
 import re
 import os
 import time
-import sys
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union, Tuple
 from colorama import Fore, Back, Style, init
-import random
 
 # Initialize colorama
 init(autoreset=True)
@@ -484,14 +482,13 @@ def find_latest_csv(directory: str = '.', prefix: str = 'fashion_products_') -> 
         log_message(f"Error finding latest CSV file: {e}", "ERROR", "❌")
         return None
 
-def main(input_file: Optional[str] = None, output_file: Optional[str] = None, 
-        exchange_rate: float = 16000.0, dataset_dir: str = '') -> pd.DataFrame:
+def main(input_file: Optional[str] = None, exchange_rate: float = 16000.0, 
+        dataset_dir: str = '') -> pd.DataFrame:
     """
     Main function to run the transformation process.
     
     Args:
         input_file: Path to the input CSV file (optional)
-        output_file: Path to save the transformed data (optional)
         exchange_rate: USD to IDR exchange rate (default: 16000.0)
         dataset_dir: Directory containing dataset files (default: current directory)
         
@@ -508,8 +505,6 @@ def main(input_file: Optional[str] = None, output_file: Optional[str] = None,
         print(f"{Fore.YELLOW}  Process: {Fore.WHITE}Data Transformation{Style.RESET_ALL}")
         if input_file:
             print(f"{Fore.YELLOW}  Input File: {Fore.WHITE}{input_file}{Style.RESET_ALL}")
-        if output_file:
-            print(f"{Fore.YELLOW}  Output File: {Fore.WHITE}{output_file}{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}  USD to IDR Exchange Rate: {Fore.WHITE}Rp{exchange_rate:,.0f}{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}  Start Time: {Fore.WHITE}{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}  [👤] Code brewed by: {Fore.GREEN}notsuperganang 🔥{Style.RESET_ALL}")
@@ -564,28 +559,8 @@ def main(input_file: Optional[str] = None, output_file: Optional[str] = None,
         log_message("Sample of transformed data (first 5 rows):", "INFO", "👀")
         print(f"\n{Fore.GREEN}Transformed Data Sample:{Style.RESET_ALL}")
         print(df_transformed.head().to_string())
-        print()
-        
-        # Save transformed data if output file specified
-        if output_file:
-            log_message(f"Saving transformed data to '{output_file}'", "PROCESSING", "💾")
-            try:
-                df_transformed.to_csv(output_file, index=False)
-                log_message(f"Transformed data successfully saved to '{output_file}'", "SUCCESS", "✅")
-            except Exception as e:
-                log_message(f"Error saving to '{output_file}': {e}", "ERROR", "❌")
-        else:
-            # Generate default output filename
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            default_output = f"transformed_products_{timestamp}.csv"
-            
-            log_message(f"No output file specified, saving to '{default_output}'", "INFO", "💾")
-            try:
-                df_transformed.to_csv(default_output, index=False)
-                log_message(f"Transformed data saved to '{default_output}'", "SUCCESS", "✅")
-            except Exception as e:
-                log_message(f"Error saving to '{default_output}': {e}", "ERROR", "❌")
-        
+        print()        
+
         # Display completion message
         total_time = time.time() - start_time
         print(f"\n{Fore.GREEN}{'═' * 70}{Style.RESET_ALL}")
@@ -603,12 +578,6 @@ def main(input_file: Optional[str] = None, output_file: Optional[str] = None,
         print(f"  🚀 {Fore.WHITE}Records per second: {Fore.GREEN}{len(df) / total_time:.2f}{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'─' * 70}{Style.RESET_ALL}")
         
-        # Display next steps
-        print(f"\n{Fore.GREEN}★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}★  TRANSFORMATION COMPLETE: Cleaned {len(df_transformed)} records!   {Style.RESET_ALL}")
-        print(f"{Fore.GREEN}★  Data is now ready for the loading stage!                {Style.RESET_ALL}")
-        print(f"{Fore.GREEN}★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★{Style.RESET_ALL}")
-        
         return df_transformed
         
     except Exception as e:
@@ -622,7 +591,6 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description='Transform fashion product data.')
     parser.add_argument('--input', '-i', help='Input CSV file path')
-    parser.add_argument('--output', '-o', help='Output CSV file path')
     parser.add_argument('--exchange-rate', '-e', type=float, default=16000.0, 
                        help='USD to IDR exchange rate (default: 16000.0)')
     parser.add_argument('--dataset-dir', '-d', default='', 
@@ -630,4 +598,4 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    main(args.input, args.output, args.exchange_rate, args.dataset_dir)
+    main(args.input, args.exchange_rate, args.dataset_dir)

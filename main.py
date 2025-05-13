@@ -1,226 +1,325 @@
-import requests
-from bs4 import BeautifulSoup
-import pandas as pd
-import logging
+"""
+Main module for the Fashion Studio ETL Pipeline.
+
+This module combines all ETL stages in a single pipeline:
+- Extract: Scrape product data from Fashion Studio website
+- Transform: Clean and transform the data
+- Load: Save data to various repositories (CSV, Google Sheets, PostgreSQL)
+
+Usage:
+    python main.py  # Run the full pipeline with default settings
+    python main.py --stages extract  # Run only extraction
+    python main.py --stages transform  # Run only transformation
+    python main.py --stages load  # Run only loading
+    python main.py --repositories all  # Save to all repositories
+"""
+
+import os
+import sys
 import time
+import argparse
+import pandas as pd
 from datetime import datetime
-import re
-from typing import List, Dict, Any, Optional, Tuple
+from colorama import Fore, Back, Style, init
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Add the utils directory to the path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 
-def get_page_content(url: str, max_retries: int = 3, retry_delay: int = 2) -> Optional[BeautifulSoup]:
+# Import the modules
+from utils.extract import scrape_all_products
+from utils.transform import transform_data
+from utils.load import load_to_csv, load_to_google_sheets, load_to_postgresql, main as load_main
+
+# Initialize colorama
+init(autoreset=True)
+
+# ASCII Art Banner
+banner = """
+╔═════════════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                         ║
+║  ███████╗████████╗██╗         ██████╗ ██╗██████╗ ███████╗██╗     ██╗███╗   ██╗███████╗  ║
+║  ██╔════╝╚══██╔══╝██║         ██╔══██╗██║██╔══██╗██╔════╝██║     ██║████╗  ██║██╔════╝  ║
+║  █████╗     ██║   ██║         ██████╔╝██║██████╔╝█████╗  ██║     ██║██╔██╗ ██║█████╗    ║
+║  ██╔══╝     ██║   ██║         ██╔═══╝ ██║██╔═══╝ ██╔══╝  ██║     ██║██║╚██╗██║██╔══╝    ║
+║  ███████╗   ██║   ███████╗    ██║     ██║██║     ███████╗███████╗██║██║ ╚████║███████╗  ║
+║  ╚══════╝   ╚═╝   ╚══════╝    ╚═╝     ╚═╝╚═╝     ╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝  ║
+║                                                                                         ║
+║  ███████╗ █████╗ ███████╗██╗  ██╗██╗ ██████╗ ███╗   ██╗                                 ║
+║  ██╔════╝██╔══██╗██╔════╝██║  ██║██║██╔═══██╗████╗  ██║                                 ║
+║  █████╗  ███████║███████╗███████║██║██║   ██║██╔██╗ ██║                                 ║
+║  ██╔══╝  ██╔══██║╚════██║██╔══██║██║██║   ██║██║╚██╗██║                                 ║
+║  ██║     ██║  ██║███████║██║  ██║██║╚██████╔╝██║ ╚████║                                 ║
+║  ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝                                 ║
+║                                                                                         ║
+║  ███████╗████████╗██╗   ██╗██████╗ ██╗ ██████╗                                          ║
+║  ██╔════╝╚══██╔══╝██║   ██║██╔══██╗██║██╔═══██╗                                         ║
+║  ███████╗   ██║   ██║   ██║██║  ██║██║██║   ██║                                         ║
+║  ╚════██║   ██║   ██║   ██║██║  ██║██║██║   ██║                                         ║
+║  ███████║   ██║   ╚██████╔╝██████╔╝██║╚██████╔╝                                         ║
+║  ╚══════╝   ╚═╝    ╚═════╝ ╚═════╝ ╚═╝ ╚═════╝                                          ║
+║                                                                                         ║
+╚═════════════════════════════════════════════════════════════════════════════════════════╝
+"""
+
+# Function to display fancy log messages
+def log_message(message, level="INFO", emoji=""):
     """
-    Fetch and parse a web page with retry mechanism.
+    Display formatted log messages with timestamp, level, and emoji.
     
     Args:
-        url: The URL to fetch
-        max_retries: Maximum number of retry attempts (default: 3)
-        retry_delay: Delay between retries in seconds (default: 2)
-        
-    Returns:
-        BeautifulSoup object with the parsed HTML content or None if failed
+        message: The message to log
+        level: Log level (INFO, SUCCESS, WARNING, ERROR, PROCESSING)
+        emoji: Optional emoji to display with the message
     """
-    retries = 0
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    while retries < max_retries:
+    if level == "INFO":
+        color = Fore.CYAN
+        level_str = f"{color}[INFO]{Style.RESET_ALL}"
+    elif level == "SUCCESS":
+        color = Fore.GREEN
+        level_str = f"{color}[SUCCESS]{Style.RESET_ALL}"
+    elif level == "WARNING":
+        color = Fore.YELLOW
+        level_str = f"{color}[WARNING]{Style.RESET_ALL}"
+    elif level == "ERROR":
+        color = Fore.RED
+        level_str = f"{color}[ERROR]{Style.RESET_ALL}"
+    elif level == "PROCESSING":
+        color = Fore.MAGENTA
+        level_str = f"{color}[PROCESSING]{Style.RESET_ALL}"
+    else:
+        color = Fore.WHITE
+        level_str = f"{color}[{level}]{Style.RESET_ALL}"
+    
+    print(f"{timestamp} {level_str} {emoji} {message}")
+
+def run_pipeline(args):
+    """
+    Run the complete ETL pipeline.
+    
+    Args:
+        args: Command-line arguments
+    """
+    start_time = time.time()
+    
+    # Clear screen and show banner
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print(Fore.GREEN + banner + Style.RESET_ALL)
+    
+    # Display header info
+    print(f"{Fore.YELLOW}{'═' * 70}{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}  ETL Pipeline: {Fore.WHITE}Fashion Studio Data{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}  Target Website: {Fore.WHITE}https://fashion-studio.dicoding.dev/{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}  Start Time: {Fore.WHITE}{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}  [👤] Code brewed by: {Fore.GREEN}notsuperganang 🔥{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}{'═' * 70}{Style.RESET_ALL}\n")
+    
+    # Which stages to run
+    run_extract = args.stages in ['extract', 'all']
+    run_transform = args.stages in ['transform', 'all']
+    run_load = args.stages in ['load', 'all']
+    
+    extracted_df = None
+    transformed_df = None
+    
+    # 1. EXTRACT STAGE
+    if run_extract:
+        log_message("STAGE 1: EXTRACTION", "PROCESSING", "🔍")
+        log_message("Starting data extraction from Fashion Studio website", "INFO", "🌐")
+        
         try:
-            logger.info(f"Fetching page: {url}")
-            response = requests.get(url, timeout=10)
+            # Set max pages based on command-line arg
+            max_pages = args.max_pages if args.max_pages else 50
             
-            if response.status_code == 200:
-                return BeautifulSoup(response.content, 'html.parser')
+            extracted_df = scrape_all_products(base_url='https://fashion-studio.dicoding.dev', 
+                                           max_pages=max_pages)
+            
+            if not extracted_df.empty:
+                # Save raw data if requested
+                if args.save_raw:
+                    raw_output = args.raw_output if args.raw_output else f'raw_products_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+                    # Use load module to save the raw data
+                    load_to_csv(extracted_df, raw_output)
+                    log_message(f"Raw data saved to '{raw_output}'", "SUCCESS", "💾")
             else:
-                logger.warning(f"Failed to fetch {url}. Status code: {response.status_code}")
-                
-        except requests.RequestException as e:
-            logger.error(f"Error fetching {url}: {e}")
-        
-        retries += 1
-        logger.info(f"Retrying ({retries}/{max_retries}) after {retry_delay} seconds...")
-        time.sleep(retry_delay)
+                log_message("Extraction failed to produce any data!", "ERROR", "❌")
+                return
+        except Exception as e:
+            log_message(f"Error during extraction stage: {e}", "ERROR", "❌")
+            if args.verbose:
+                import traceback
+                traceback.print_exc()
+            return
     
-    logger.error(f"Max retries reached for {url}. Giving up.")
-    return None
-
-def extract_product_details(product_div: BeautifulSoup) -> Dict[str, Any]:
-    """
-    Extract all required details from a product div.
-    
-    Args:
-        product_div: BeautifulSoup object representing a product div
+    # 2. TRANSFORM STAGE
+    if run_transform:
+        log_message("STAGE 2: TRANSFORMATION", "PROCESSING", "🔄")
         
-    Returns:
-        Dictionary with extracted product details
-    """
-    product_data = {
-        "Title": "Unknown Product",
-        "Price": None,
-        "Rating": None,
-        "Colors": None,
-        "Size": None,
-        "Gender": None
-    }
-    
-    try:
-        # Extract title
-        title_elem = product_div.select_one('.product-title')
-        if title_elem:
-            product_data["Title"] = title_elem.text.strip()
-        
-        # Extract price
-        price_elem = product_div.select_one('.price')
-        if price_elem:
-            # Remove any currency symbols and convert to float
-            price_text = price_elem.text.strip()
-            # Just store the raw price text for now, transformation will happen later
-            product_data["Price"] = price_text
-        
-        # Extract rating
-        rating_elem = product_div.find('p', text=lambda t: t and 'Rating:' in t)
-        if rating_elem:
-            product_data["Rating"] = rating_elem.text.strip()
-        
-        # Extract colors
-        colors_elem = product_div.find('p', text=lambda t: t and 'Colors' in t)
-        if colors_elem:
-            product_data["Colors"] = colors_elem.text.strip()
-        
-        # Extract size
-        size_elem = product_div.find('p', text=lambda t: t and 'Size:' in t)
-        if size_elem:
-            product_data["Size"] = size_elem.text.strip()
-        
-        # Extract gender
-        gender_elem = product_div.find('p', text=lambda t: t and 'Gender:' in t)
-        if gender_elem:
-            product_data["Gender"] = gender_elem.text.strip()
+        try:
+            # If we have extracted data, use it, otherwise try to load from file
+            if extracted_df is not None:
+                log_message("Using data from extraction stage", "INFO", "📋")
+                df_to_transform = extracted_df
+            elif args.input_file:
+                log_message(f"Loading data from '{args.input_file}'", "INFO", "📂")
+                df_to_transform = pd.read_csv(args.input_file)
+            else:
+                log_message("No input data for transformation. Either run extraction or specify input file.", "ERROR", "❌")
+                return
             
-    except Exception as e:
-        logger.error(f"Error extracting product details: {e}")
-    
-    return product_data
-
-def get_total_pages(soup: BeautifulSoup) -> int:
-    """
-    Extract the total number of pages from the pagination information.
-    
-    Args:
-        soup: BeautifulSoup object of the page containing pagination
-        
-    Returns:
-        Total number of pages as an integer
-    """
-    try:
-        pagination_info = soup.select_one('.page-item.current .page-link')
-        if pagination_info:
-            # Extract "X of Y" format
-            match = re.search(r'(\d+) of (\d+)', pagination_info.text)
-            if match:
-                return int(match.group(2))
-    except Exception as e:
-        logger.error(f"Error getting total pages: {e}")
-    
-    # Default to 50 pages if we can't determine
-    logger.warning("Could not determine total pages, defaulting to 50")
-    return 50
-
-def extract_products_from_page(page_url: str) -> Tuple[List[Dict[str, Any]], Optional[int]]:
-    """
-    Extract all products from a single page.
-    
-    Args:
-        page_url: URL of the page to scrape
-        
-    Returns:
-        Tuple containing:
-        - List of dictionaries, each containing product details
-        - Total number of pages (on first page only, otherwise None)
-    """
-    soup = get_page_content(page_url)
-    if not soup:
-        return [], None
-    
-    products = []
-    total_pages = None
-    
-    # Get total pages (only needed from first page)
-    if 'page1' in page_url or '/pages/' not in page_url:
-        total_pages = get_total_pages(soup)
-    
-    # Extract all product cards
-    product_details_divs = soup.select('.product-details')
-    
-    for product_div in product_details_divs:
-        product_data = extract_product_details(product_div)
-        products.append(product_data)
-    
-    logger.info(f"Extracted {len(products)} products from {page_url}")
-    return products, total_pages
-
-def scrape_all_products(base_url: str = 'https://fashion-studio.dicoding.dev', 
-                       max_pages: int = 50) -> pd.DataFrame:
-    """
-    Scrape all products from all pages.
-    
-    Args:
-        base_url: Base URL of the website
-        max_pages: Maximum number of pages to scrape
-        
-    Returns:
-        DataFrame containing all scraped products
-    """
-    all_products = []
-    
-    try:
-        # Start with the first page
-        first_page_url = f"{base_url}/page1"
-        products, total_pages = extract_products_from_page(first_page_url)
-        all_products.extend(products)
-        
-        # Determine how many pages to scrape
-        if total_pages:
-            pages_to_scrape = min(total_pages, max_pages)
-        else:
-            pages_to_scrape = max_pages
+            # Set exchange rate based on command-line arg
+            exchange_rate = args.exchange_rate if args.exchange_rate else 16000.0
             
-        logger.info(f"Found {pages_to_scrape} total pages to scrape")
+            transformed_df = transform_data(df_to_transform, exchange_rate=exchange_rate)
+            
+            if not transformed_df.empty:
+                # Save transformed data if requested - use the load module
+                if args.save_transformed:
+                    transformed_output = args.transformed_output if args.transformed_output else f'transformed_products_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+                    load_to_csv(transformed_df, transformed_output)
+                    log_message(f"Transformed data saved to '{transformed_output}'", "SUCCESS", "💾")
+            else:
+                log_message("Transformation failed to produce any data!", "ERROR", "❌")
+                return
+        except Exception as e:
+            log_message(f"Error during transformation stage: {e}", "ERROR", "❌")
+            if args.verbose:
+                import traceback
+                traceback.print_exc()
+            return
+    
+    # 3. LOAD STAGE
+    if run_load:
+        log_message("STAGE 3: LOADING", "PROCESSING", "📥")
         
-        # Scrape remaining pages
-        for page_num in range(2, pages_to_scrape + 1):
-            page_url = f"{base_url}/page{page_num}"
-            products, _ = extract_products_from_page(page_url)
-            all_products.extend(products)
+        try:
+            # If we have transformed data, use it, otherwise try to load from file
+            if transformed_df is not None:
+                log_message("Using data from transformation stage", "INFO", "📋")
+                df_to_load = transformed_df
+            elif args.input_file:
+                log_message(f"Loading data from '{args.input_file}'", "INFO", "📂")
+                df_to_load = pd.read_csv(args.input_file)
+            else:
+                log_message("No input data for loading. Either run transformation or specify input file.", "ERROR", "❌")
+                return
             
-            # Add a small delay to be respectful to the server
-            time.sleep(1)
+            # Determine which repositories to use
+            load_to_csv_flag = args.repositories in ['csv', 'all']
+            load_to_sheets_flag = args.repositories in ['sheets', 'all']
+            load_to_postgres_flag = args.repositories in ['postgres', 'all']
             
-    except Exception as e:
-        logger.error(f"Error during scraping: {e}")
+            # Set up database parameters
+            db_params = {
+                "dbname": args.db_name,
+                "user": args.db_user,
+                "password": args.db_pass,
+                "host": args.db_host,
+                "port": args.db_port
+            }
+            
+            # Run the load process
+            load_success = load_main(
+                df=df_to_load,
+                csv_output=args.output_file,
+                load_to_csv_flag=load_to_csv_flag,
+                load_to_sheets_flag=load_to_sheets_flag,
+                load_to_postgres_flag=load_to_postgres_flag,
+                google_sheets_credentials=args.google_creds,
+                db_params=db_params,
+                dry_run=args.dry_run
+            )
+            
+            if not load_success:
+                log_message("Loading stage completed with errors.", "WARNING", "⚠️")
+            
+        except Exception as e:
+            log_message(f"Error during loading stage: {e}", "ERROR", "❌")
+            if args.verbose:
+                import traceback
+                traceback.print_exc()
+            return
     
-    # Convert to DataFrame
-    df = pd.DataFrame(all_products)
+    # Pipeline completion
+    total_time = time.time() - start_time
+    print(f"\n{Fore.CYAN}{'─' * 70}{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}  ETL PIPELINE SUMMARY{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}{'─' * 70}{Style.RESET_ALL}")
+    print(f"  ⏱️ {Fore.WHITE}Total processing time: {Fore.CYAN}{total_time:.2f} seconds{Style.RESET_ALL}")
     
-    # Add timestamp
-    df['timestamp'] = datetime.now().isoformat()
+    # Print status for each stage
+    extract_status = f"{Fore.GREEN}✓ COMPLETED" if run_extract else f"{Fore.YELLOW}○ SKIPPED"
+    print(f"  🔍 {Fore.WHITE}Extract: {extract_status}{Style.RESET_ALL}")
     
-    logger.info(f"Total products scraped: {len(df)}")
-    return df
+    transform_status = f"{Fore.GREEN}✓ COMPLETED" if run_transform else f"{Fore.YELLOW}○ SKIPPED"
+    print(f"  🔄 {Fore.WHITE}Transform: {transform_status}{Style.RESET_ALL}")
+    
+    load_status = f"{Fore.GREEN}✓ COMPLETED" if run_load else f"{Fore.YELLOW}○ SKIPPED"
+    print(f"  📥 {Fore.WHITE}Load: {load_status}{Style.RESET_ALL}")
+    
+    print(f"{Fore.CYAN}{'─' * 70}{Style.RESET_ALL}")
+    
+    # Final success message
+    print(f"\n{Fore.GREEN}★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}★  ETL PIPELINE EXECUTION COMPLETED SUCCESSFULLY!          {Style.RESET_ALL}")
+    print(f"{Fore.GREEN}★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★{Style.RESET_ALL}")
 
-def main():
-    """Main function to run the extraction process."""
-    df = scrape_all_products()
+def parse_arguments():
+    """
+    Parse command-line arguments.
     
-    # Save raw data to CSV for debugging/backup
-    df.to_csv('raw_products.csv', index=False)
-    logger.info("Raw data saved to 'raw_products.csv'")
+    Returns:
+        Parsed arguments
+    """
+    parser = argparse.ArgumentParser(
+        description='Fashion Studio ETL Pipeline',
+        formatter_class=argparse.RawTextHelpFormatter
+    )
     
-    return df
+    parser.add_argument('--stages', choices=['extract', 'transform', 'load', 'all'], 
+                       default='all', help='Pipeline stages to run (default: all)')
+    
+    parser.add_argument('--input-file', '-i', help='Input file for transform or load stages')
+    parser.add_argument('--output-file', '-o', default='products.csv', 
+                       help='Output CSV file path (default: products.csv)')
+    
+    parser.add_argument('--max-pages', '-m', type=int, default=50,
+                       help='Maximum number of pages to scrape (default: 50)')
+    
+    parser.add_argument('--save-raw', action='store_true', 
+                       help='Save raw data after extraction')
+    parser.add_argument('--raw-output', 
+                       help='Output file for raw data (default: raw_products_TIMESTAMP.csv)')
+    
+    parser.add_argument('--save-transformed', action='store_true', 
+                       help='Save transformed data after transformation')
+    parser.add_argument('--transformed-output', 
+                       help='Output file for transformed data (default: transformed_products_TIMESTAMP.csv)')
+    
+    parser.add_argument('--exchange-rate', '-e', type=float, default=16000.0, 
+                       help='USD to IDR exchange rate (default: 16000.0)')
+    
+    parser.add_argument('--repositories', '-r', choices=['csv', 'sheets', 'postgres', 'all'], 
+                       default='csv', help='Target repositories to load data (default: csv)')
+    
+    parser.add_argument('--google-creds', '-g', default='google-sheets-api.json', 
+                       help='Google Sheets API credentials file (default: google-sheets-api.json)')
+    
+    parser.add_argument('--db-host', default='localhost', help='PostgreSQL host (default: localhost)')
+    parser.add_argument('--db-port', default='5432', help='PostgreSQL port (default: 5432)')
+    parser.add_argument('--db-name', default='fashion_data', help='PostgreSQL database name (default: fashion_data)')
+    parser.add_argument('--db-user', default='postgres', help='PostgreSQL username (default: postgres)')
+    parser.add_argument('--db-pass', default='postgres', help='PostgreSQL password (default: postgres)')
+    
+    parser.add_argument('--dry-run', action='store_true', 
+                       help='Validate data for loading but do not save to repositories (for testing)')
+    
+    parser.add_argument('--verbose', '-v', action='store_true', 
+                       help='Enable verbose error messages with stack traces')
+    
+    return parser.parse_args()
 
 if __name__ == "__main__":
-    main()
+    args = parse_arguments()
+    run_pipeline(args)

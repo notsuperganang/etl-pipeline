@@ -360,16 +360,11 @@ def main():
     try:
         df = scrape_all_products()
         
-        # Save raw data to CSV for debugging/backup
-        output_file = f'fashion_products_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-        df.to_csv(output_file, index=False)
-        log_message(f"Raw data saved to '{output_file}'", "SUCCESS", "💾")
-        
         # Display completion message
-        print(f"\n{Fore.GREEN}★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★{Style.RESET_ALL}")
+        print(f"\n{Fore.GREEN}★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★{Style.RESET_ALL}")
         print(f"{Fore.GREEN}★  EXTRACTION COMPLETE: Collected {len(df)} products!        {Style.RESET_ALL}")
         print(f"{Fore.GREEN}★  Data is ready for transformation & loading stages!       {Style.RESET_ALL}")
-        print(f"{Fore.GREEN}★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★{Style.RESET_ALL}")
         
         return df
     
