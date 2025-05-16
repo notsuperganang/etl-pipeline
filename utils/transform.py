@@ -432,12 +432,29 @@ def transform_data(df: pd.DataFrame, exchange_rate: float = 16000.0) -> pd.DataF
     df_transformed['Rating'] = pd.to_numeric(df_transformed['Rating'], errors='coerce')
     df_transformed['Colors'] = pd.to_numeric(df_transformed['Colors'], errors='coerce')
     
-    # Convert timestamp to datetime if it's not already
-    if 'timestamp' in df_transformed.columns and df_transformed['timestamp'].dtype != 'datetime64[ns]':
-        try:
-            df_transformed['timestamp'] = pd.to_datetime(df_transformed['timestamp'])
-        except Exception as e:
-            log_message(f"Could not convert timestamp column to datetime: {e}", "WARNING", "⚠️")
+    # Handle timestamp column - keep it as string for compatibility with Google Sheets
+    if 'timestamp' in df_transformed.columns:
+        # If timestamp is already a string and in valid format, keep it as is
+        if df_transformed['timestamp'].dtype == 'object':
+            # Validate that it's a proper datetime string format
+            try:
+                # Test parse the first non-null value to ensure it's valid
+                sample_timestamp = df_transformed['timestamp'].dropna().iloc[0] if len(df_transformed['timestamp'].dropna()) > 0 else None
+                if sample_timestamp:
+                    pd.to_datetime(sample_timestamp)
+                    log_message("Timestamp column is already in string format - keeping for Google Sheets compatibility", "INFO", "📅")
+            except Exception as e:
+                log_message(f"Warning: Timestamp might not be in valid format: {e}", "WARNING", "⚠️")
+        else:
+            # If it's not a string, convert it to pandas datetime first, then back to string
+            try:
+                # Convert to datetime first (if it's not already)
+                df_transformed['timestamp'] = pd.to_datetime(df_transformed['timestamp'])
+                # Then convert back to ISO string format for compatibility with all repositories
+                df_transformed['timestamp'] = df_transformed['timestamp'].dt.strftime('%Y-%m-%dT%H:%M:%S.%f')
+                log_message("Converted timestamp to string format for Google Sheets compatibility", "SUCCESS", "✅")
+            except Exception as e:
+                log_message(f"Could not handle timestamp column: {e}", "WARNING", "⚠️")
     
     # Check data types after conversion
     check_data_types(df_transformed)

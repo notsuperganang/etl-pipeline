@@ -1,0 +1,259 @@
+Fashion Studio ETL Pipeline - Submission Documentation
+================================================================================
+
+Informasi Project
+
+Nama Project: Fashion Studio ETL Pipeline
+Developer: notsuperganang
+Target Website: https://fashion-studio.dicoding.dev/
+Repo Github: https://github.com/notsuperganang/etl-pipeline
+Teknologi: Python, BeautifulSoup, Pandas, PostgreSQL, Google Sheets API
+
+================================================================================
+
+## Gambaran Umum Project
+Project ini mengimplementasikan pipeline ETL (Extract, Transform, Load) untuk data produk fashion dari website Fashion Studio. Pipeline ini mengekstrak informasi produk, mentransformasikannya (termasuk konversi mata uang dari USD ke IDR), dan memuat data ke dalam berbagai repositori (CSV, Google Sheets, PostgreSQL).
+
+## Prasyarat Sistem
+- Python 3.9 atau yang lebih tinggi
+- pip package manager
+- Git (opsional, untuk cloning repository)
+- Koneksi internet untuk web scraping
+
+## Instalasi dan Pengaturan
+
+### 1. Instal Dependensi yang Diperlukan
+Jalankan perintah berikut untuk menginstal semua package yang diperlukan:
+
+```bash
+pip install -r requirements.txt
+```
+
+Atau install secara manual:
+```bash
+pip install pandas requests beautifulsoup4 pytest pytest-cov gspread oauth2client psycopg2-binary sqlalchemy colorama
+```
+
+### 2. Pengaturan Google Sheets API
+1. Pastikan file `google-sheets-api.json` ada di root project
+2. File ini harus berisi kredensial Google Sheets API Anda
+3. Pastikan service account memiliki permission yang sesuai untuk Google Sheets Anda
+
+### 3. Pengaturan PostgreSQL (Opsional)
+Jika Anda berencana menggunakan PostgreSQL sebagai repositori target:
+1. Install PostgreSQL di sistem Anda
+2. Buat database (default: 'fashion_data')
+3. Pastikan service PostgreSQL berjalan
+4. Update parameter koneksi jika berbeda dari default
+
+## Menjalankan Pipeline ETL
+
+### Panduan Cepat
+Untuk melihat semua opsi yang tersedia, gunakan:
+```bash
+python main.py --help
+```
+
+### Penggunaan Dasar
+Untuk menjalankan pipeline ETL lengkap dengan pengaturan default:
+```bash
+python main.py
+```
+
+### Contoh Penggunaan Lengkap
+Untuk menjalankan pipeline lengkap ke semua repositori:
+```bash
+python main.py --repositories all \
+               --db-user YOUR_USERNAME \
+               --db-pass YOUR_PASSWORD \
+               --google-sheet-id "YOUR-GOOGLE-SHEETS-ID"
+```
+
+### Opsi Penggunaan Lanjutan
+
+#### Menjalankan stage tertentu saja:
+```bash
+# Extract saja
+python main.py --stages extract
+
+# Transform saja
+python main.py --stages transform
+
+# Load saja
+python main.py --stages load
+```
+
+#### Menentukan file input/output:
+```bash
+# Gunakan file input khusus untuk transform/load
+python main.py --stages transform --input-file raw_data.csv
+
+# Tentukan file output khusus
+python main.py --output-file custom_products.csv
+```
+
+#### Konfigurasi parameter extraction:
+```bash
+# Batasi jumlah halaman yang di-scrape
+python main.py --max-pages 10
+
+# Simpan data mentah hasil ekstraksi
+python main.py --save-raw --raw-output raw_products.csv
+```
+
+#### Konfigurasi parameter transformation:
+```bash
+# Gunakan kurs pertukaran khusus
+python main.py --exchange-rate 15500.0
+
+# Simpan data hasil transformasi
+python main.py --save-transformed --transformed-output transformed_products.csv
+```
+
+#### Konfigurasi repositori load:
+```bash
+# Load ke repositori tertentu
+python main.py --repositories csv              # CSV saja
+python main.py --repositories sheets           # Google Sheets saja
+python main.py --repositories postgres         # PostgreSQL saja
+python main.py --repositories all              # Semua repositori
+
+# Konfigurasi Google Sheets kustom
+python main.py --repositories sheets --google-sheet-id YOUR_SHEET_ID --google-sheet-name "Custom Sheet Name"
+
+# Konfigurasi PostgreSQL kustom
+python main.py --repositories postgres --db-host localhost --db-name fashion_db --db-user myuser --db-pass mypassword
+```
+
+#### Opsi tambahan:
+```bash
+# Dry run (validasi tapi tidak menyimpan)
+python main.py --dry-run
+
+# Pesan error yang detail
+python main.py --verbose
+```
+
+## Menjalankan Unit Test
+
+### Menggunakan pytest secara langsung:
+```bash
+# Jalankan semua test
+pytest tests/ -v
+
+# Jalankan file test tertentu
+pytest tests/test_extract.py -v
+pytest tests/test_transform.py -v
+pytest tests/test_load.py -v
+
+# Jalankan test dengan coverage
+pytest tests/ -v --cov=utils --cov=main --cov-report=html --cov-report=term-missing
+```
+
+### Menggunakan script yang disediakan:
+```bash
+# Buat script executable (Linux/MacOS)
+chmod +x run_all_tests.sh
+
+# Jalankan semua test dengan coverage
+./run_all_tests.sh
+```
+
+**Catatan untuk pengguna Windows:**
+- Gunakan Git Bash atau WSL untuk menjalankan shell script
+- Alternatifnya, jalankan perintah pytest langsung di Command Prompt/PowerShell
+
+SANGAT DISARANKAN MENGGUNAKAN SHELL SCRIPT
+
+## Menjalankan Test Coverage
+
+### Generate laporan coverage:
+```bash
+# Jalankan test dengan coverage
+pytest tests/ --cov=utils --cov=main --cov-report=html --cov-report=term-missing --cov-fail-under=80
+
+# Generate laporan coverage ke direktori tertentu
+pytest tests/ --cov=utils --cov=main --cov-report=html:htmlcov
+
+# Lihat laporan coverage
+# Buka htmlcov/index.html di web browser Anda
+```
+
+### Konfigurasi coverage:
+Project ini menggunakan `setup.cfg` untuk konfigurasi coverage dengan pengaturan:
+- Threshold coverage minimum: 80%
+- Laporan HTML dibuat di direktori `htmlcov/`
+- Mengecualikan file test dan cache dari perhitungan coverage
+
+## URL Google Sheets
+
+Dokumen Google Sheets yang digunakan dalam pipeline ini tersedia di:
+```
+https://docs.google.com/spreadsheets/d/1pAIzUF4hIjiUl0oq8r5fB6aYCi_MQBI_l3Nfm9_1ois/edit?gid=0#gid=0
+```
+
+**Catatan:** Google Sheet ini harus dapat diakses dengan kredensial yang disediakan dalam `google-sheets-api.json`. Pipeline akan otomatis membuat worksheet dan memperbarui data sesuai konfigurasi.
+
+## Struktur File Project
+
+```
+.
+├── main.py                 # Script utama pipeline ETL
+├── products.csv           # File data sample/output
+├── google-sheets-api.json # Kredensial Google Sheets API
+├── run_all_tests.sh       # Script untuk menjalankan semua test
+├── setup.cfg              # Konfigurasi test dan coverage
+├── requirements.txt       # File dependensi Python
+├── utils/                 # Modul ETL
+│   ├── extract.py         # Modul ekstraksi data
+│   ├── transform.py       # Modul transformasi data
+│   └── load.py           # Modul loading data
+└── tests/                 # Unit test
+    ├── test_extract.py
+    ├── test_transform.py
+    └── test_load.py
+```
+
+## Output yang Diharapkan
+
+Setelah menjalankan pipeline dengan sukses, Anda akan melihat:
+1. Output console dengan logging berwarna dan progress bar
+2. File `products.csv` dengan data yang telah dibersihkan dan ditransformasi
+3. Google Sheets yang telah diperbarui dengan data (jika dikonfigurasi)
+4. Data di database PostgreSQL (jika dikonfigurasi)
+5. Laporan coverage HTML di direktori `htmlcov/` (setelah menjalankan test)
+
+## Troubleshooting
+
+### Issues Umum:
+1. **Error import**: Pastikan semua dependensi terinstal dengan benar
+2. **Google Sheets access denied**: Periksa kredensial API dan permission sheet
+3. **Koneksi PostgreSQL gagal**: Verifikasi database berjalan dan kredensial benar
+4. **Memory issues dengan dataset besar**: Kurangi parameter `--max-pages`
+5. **Rate limiting**: Pipeline sudah termasuk delay untuk menghormati limit server
+
+### Mode Debug:
+Gunakan flag `--verbose` untuk melihat pesan error yang detail dan stack trace untuk debugging.
+
+## Catatan Penting
+
+- Pipeline menghormati rate limit dengan delay acak antar request
+- Data otomatis dibersihkan untuk menghilangkan duplikat dan entri yang tidak valid
+- Konversi mata uang menggunakan kurs yang dapat dikonfigurasi (default: 16.000 IDR per USD)
+- Kolom timestamp mencatat waktu ekstraksi untuk lineage data
+- Semua fungsi dilengkapi dengan error handling dan logging yang komprehensif
+
+## Bantuan Tambahan
+
+Untuk melihat semua opsi command line yang tersedia beserta penjelasannya:
+```bash
+python main.py --help
+```
+
+Command ini akan menampilkan daftar lengkap semua parameter yang bisa digunakan beserta penjelasan masing-masing parameter.
+
+===================================================================================================================================================================
+
+Contact: ganangsetyohadi@gmail.com
+Last Updated: 2025-05-16
+Version: 1.4

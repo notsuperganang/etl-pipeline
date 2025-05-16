@@ -22,13 +22,10 @@ import pandas as pd
 from datetime import datetime
 from colorama import Fore, Back, Style, init
 
-# Add the utils directory to the path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-
 # Import the modules
 from utils.extract import scrape_all_products
 from utils.transform import transform_data
-from utils.load import load_to_csv, load_to_google_sheets, load_to_postgresql, main as load_main
+from utils.load import load_to_csv, main as load_main
 
 # Initialize colorama
 init(autoreset=True)
@@ -194,7 +191,6 @@ def run_pipeline(args):
         log_message("STAGE 3: LOADING", "PROCESSING", "📥")
         
         try:
-            # If we have transformed data, use it, otherwise try to load from file
             if transformed_df is not None:
                 log_message("Using data from transformation stage", "INFO", "📋")
                 df_to_load = transformed_df
@@ -227,6 +223,9 @@ def run_pipeline(args):
                 load_to_sheets_flag=load_to_sheets_flag,
                 load_to_postgres_flag=load_to_postgres_flag,
                 google_sheets_credentials=args.google_creds,
+                google_sheet_id=args.google_sheet_id,
+                google_sheet_name=args.google_sheet_name,
+                google_worksheet_name=args.google_worksheet_name,
                 db_params=db_params,
                 dry_run=args.dry_run
             )
@@ -305,6 +304,11 @@ def parse_arguments():
     
     parser.add_argument('--google-creds', '-g', default='google-sheets-api.json', 
                        help='Google Sheets API credentials file (default: google-sheets-api.json)')
+    
+    parser.add_argument('--google-sheet-id', '--sheet-id', help='Google Sheets ID for loading data(Optional)')
+    parser.add_argument('--google-sheet-name', default='Fashion Products Data', help='Google Sheet name (default: Fashion Products Data)')
+    parser.add_argument('--google-worksheet-name', default='Products',
+                       help='Worksheet name (default: Products)')
     
     parser.add_argument('--db-host', default='localhost', help='PostgreSQL host (default: localhost)')
     parser.add_argument('--db-port', default='5432', help='PostgreSQL port (default: 5432)')

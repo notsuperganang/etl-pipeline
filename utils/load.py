@@ -26,10 +26,10 @@ from colorama import Fore, Back, Style, init
 import gspread
 import psycopg2
 from psycopg2 import sql
-import sqlalchemy
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text as sqlalchemy_text
 from oauth2client.service_account import ServiceAccountCredentials
 import sys
+import argparse
 
 # Initialize colorama
 init(autoreset=True)
@@ -127,7 +127,7 @@ def show_progress_bar(current, total, prefix="", suffix="", length=50):
         Formatted progress bar string
     """
     percent = (current / total) * 100 if total > 0 else 0
-    filled_length = int(length * current // total)
+    filled_length = int(length * current // total) if total > 0 else 0
     bar = Fore.GREEN + '█' * filled_length + Fore.WHITE + '░' * (length - filled_length)
     return f"{prefix} [{bar}{Style.RESET_ALL}] {current}/{total} {suffix} ({percent:.1f}%)"
 
@@ -169,7 +169,8 @@ def load_to_csv(df: pd.DataFrame, output_path: str = "products.csv") -> bool:
 def load_to_google_sheets(df: pd.DataFrame, 
                           credentials_path: str = "google-sheets-api.json",
                           sheet_name: str = "Fashion Products Data",
-                          worksheet_name: str = "Products") -> bool:
+                          worksheet_name: str = "Products",
+                          sheet_id: str = None) -> bool: 
     """
     Save transformed data to Google Sheets.
     
@@ -202,16 +203,25 @@ def load_to_google_sheets(df: pd.DataFrame,
             log_message(f"Authentication with Google Sheets API failed: {auth_error}", "ERROR", "❌")
             return False
         
-        # Try to open existing sheet or create a new one
-        try:
-            # First try to open existing sheet
-            sheet = client.open(sheet_name)
-            log_message(f"Found existing Google Sheet: '{sheet_name}'", "INFO", "📝")
-        except gspread.exceptions.SpreadsheetNotFound:
-            # Create a new sheet if it doesn't exist
-            sheet = client.create(sheet_name)
-            sheet.share('anyone', perm_type='anyone', role='writer')
-            log_message(f"Created new Google Sheet: '{sheet_name}'", "SUCCESS", "✅")
+        # Open sheet by ID or name
+        if sheet_id:
+            # Method 1: Open by specific Sheet ID
+            try:
+                sheet = client.open_by_key(sheet_id)
+                log_message(f"Opened Google Sheet by ID: {sheet_id}", "SUCCESS", "🎯")
+            except Exception as e:
+                log_message(f"Failed to open sheet with ID {sheet_id}: {e}", "ERROR", "❌")
+                return False
+        else:
+            # Method 2: Open by name (original behavior)
+            try:
+                sheet = client.open(sheet_name)
+                log_message(f"Found existing Google Sheet: '{sheet_name}'", "INFO", "📝")
+            except gspread.exceptions.SpreadsheetNotFound:
+                sheet = client.create(sheet_name)
+                sheet.share('anyone', perm_type='anyone', role='writer')
+                log_message(f"Created new Google Sheet: '{sheet_name}'", "SUCCESS", "✅")
+                log_message(f"Sheet ID: {sheet.id}", "INFO", "🆔")
         
         # Try to open existing worksheet or create a new one
         try:
@@ -305,93 +315,87 @@ def load_to_postgresql(df: pd.DataFrame,
     Returns:
         Boolean indicating success or failure
     """
+    log_message(f"Preparing to save data to PostgreSQL: '{table_name}'", "PROCESSING", "🐘")
+    
+    # Create database if it doesn't exist
+    temp_db_params = db_params.copy()
+    temp_db_params["dbname"] = "postgres"
+    
     try:
-        log_message(f"Preparing to save data to PostgreSQL: '{table_name}'", "PROCESSING", "🐘")
+        conn = psycopg2.connect(**temp_db_params, connect_timeout=10)  # Add timeout
+        conn.autocommit = True
+        cursor = conn.cursor()
+    except psycopg2.OperationalError as e:
+        if "timeout" in str(e).lower():
+            log_message(f"Database connection timeout. Please check if PostgreSQL server is running at {db_params['host']}:{db_params['port']}", "ERROR", "⏱️")
+        else:
+            log_message(f"Database connection error: {e}", "ERROR", "❌")
+        return False
+    
+    try:
+        # Check if the target database exists
+        cursor.execute(f"SELECT 1 FROM pg_database WHERE datname = '{db_params['dbname']}'")
+        exists = cursor.fetchone()
         
-        # Create database if it doesn't exist
+        if not exists:
+            log_message(f"Creating database '{db_params['dbname']}'", "PROCESSING", "🗄️")
+            # Create the database
+            cursor.execute(sql.SQL("CREATE DATABASE {}").format(
+                sql.Identifier(db_params['dbname'])
+            ))
+            log_message(f"Database '{db_params['dbname']}' created successfully", "SUCCESS", "✅")
+    except Exception as db_error:
+        log_message(f"Could not create database: {db_error}", "ERROR", "❌")
+        cursor.close()
+        conn.close()
+        return False
+    
+    cursor.close()
+    conn.close()
+    
+    # Now connect to the target database
+    log_message(f"Connecting to PostgreSQL database: '{db_params['dbname']}'", "PROCESSING", "🔌")
+    
+    # Create SQLAlchemy engine
+    try:
+        engine_url = f"postgresql://{db_params['user']}:{db_params['password']}@{db_params['host']}:{db_params['port']}/{db_params['dbname']}"
+        engine = create_engine(engine_url)
+        log_message("Successfully connected to PostgreSQL database", "SUCCESS", "✅")
+    except Exception as engine_error:
+        log_message(f"Error creating database engine: {engine_error}", "ERROR", "❌")
+        return False
+    
+    # Save DataFrame to PostgreSQL
+    log_message(f"Saving {len(df)} records to table '{table_name}'", "PROCESSING", "📥")
+    
+    try:
+        # Use SQLAlchemy to handle the DataFrame insertion
+        df.to_sql(
+            name=table_name,
+            con=engine,
+            if_exists='replace',  # Replace the table if it already exists
+            index=False,
+            chunksize=1000  # Process in chunks to handle large datasets
+        )
+        
+        log_message(f"Successfully saved data to PostgreSQL table '{table_name}'", "SUCCESS", "🎉")
+        
+        # Verify the data was inserted correctly
         try:
-            # Connect to the default 'postgres' database first
-            temp_db_params = db_params.copy()
-            temp_db_params["dbname"] = "postgres"
-            
-            try:
-                conn = psycopg2.connect(**temp_db_params, connect_timeout=10)  # Add timeout
-                conn.autocommit = True
-                cursor = conn.cursor()
-            except psycopg2.OperationalError as e:
-                if "timeout" in str(e).lower():
-                    log_message(f"Database connection timeout. Please check if PostgreSQL server is running at {db_params['host']}:{db_params['port']}", "ERROR", "⏱️")
+            with engine.connect() as connection:
+                result = connection.execute(sqlalchemy_text(f"SELECT COUNT(*) FROM {table_name}"))
+                count = result.fetchone()[0]
+                
+                if count == len(df):
+                    log_message(f"Data verification successful. {count} records in database.", "SUCCESS", "✓")
                 else:
-                    log_message(f"Database connection error: {e}", "ERROR", "❌")
-                return False
-            
-            # Check if the target database exists
-            cursor.execute(f"SELECT 1 FROM pg_database WHERE datname = '{db_params['dbname']}'")
-            exists = cursor.fetchone()
-            
-            if not exists:
-                log_message(f"Creating database '{db_params['dbname']}'", "PROCESSING", "🗄️")
-                # Create the database
-                cursor.execute(sql.SQL("CREATE DATABASE {}").format(
-                    sql.Identifier(db_params['dbname'])
-                ))
-                log_message(f"Database '{db_params['dbname']}' created successfully", "SUCCESS", "✅")
-            
-            cursor.close()
-            conn.close()
-            
-        except Exception as db_error:
-            log_message(f"Could not create database: {db_error}", "ERROR", "❌")
-            return False
+                    log_message(f"Data count mismatch. Expected {len(df)}, found {count}.", "WARNING", "⚠️")
+        except Exception as verify_error:
+            log_message(f"Could not verify data: {verify_error}", "WARNING", "⚠️")
         
-        # Now connect to the target database
-        log_message(f"Connecting to PostgreSQL database: '{db_params['dbname']}'", "PROCESSING", "🔌")
-        
-        # Create SQLAlchemy engine
-        try:
-            engine_url = f"postgresql://{db_params['user']}:{db_params['password']}@{db_params['host']}:{db_params['port']}/{db_params['dbname']}"
-            engine = create_engine(engine_url)
-            log_message("Successfully connected to PostgreSQL database", "SUCCESS", "✅")
-        except Exception as engine_error:
-            log_message(f"Error creating database engine: {engine_error}", "ERROR", "❌")
-            return False
-        
-        # Save DataFrame to PostgreSQL
-        log_message(f"Saving {len(df)} records to table '{table_name}'", "PROCESSING", "📥")
-        
-        try:
-            # Use SQLAlchemy to handle the DataFrame insertion
-            df.to_sql(
-                name=table_name,
-                con=engine,
-                if_exists='replace',  # Replace the table if it already exists
-                index=False,
-                chunksize=1000  # Process in chunks to handle large datasets
-            )
-            
-            log_message(f"Successfully saved data to PostgreSQL table '{table_name}'", "SUCCESS", "🎉")
-            
-            # Verify the data was inserted correctly
-            try:
-                with engine.connect() as connection:
-                    result = connection.execute(sqlalchemy.text(f"SELECT COUNT(*) FROM {table_name}"))  # Use sqlalchemy.text
-                    count = result.fetchone()[0]
-                    
-                    if count == len(df):
-                        log_message(f"Data verification successful. {count} records in database.", "SUCCESS", "✓")
-                    else:
-                        log_message(f"Data count mismatch. Expected {len(df)}, found {count}.", "WARNING", "⚠️")
-            except Exception as verify_error:
-                log_message(f"Could not verify data: {verify_error}", "WARNING", "⚠️")
-            
-            return True
-            
-        except Exception as insert_error:
-            log_message(f"Error inserting data into PostgreSQL: {insert_error}", "ERROR", "❌")
-            return False
-            
-    except Exception as e:
-        log_message(f"Error in PostgreSQL load process: {e}", "ERROR", "❌")
+        return True
+    except Exception as insert_error:
+        log_message(f"Error inserting data into PostgreSQL: {insert_error}", "ERROR", "❌")
         return False
 
 def main(df: Optional[pd.DataFrame] = None, 
@@ -401,6 +405,9 @@ def main(df: Optional[pd.DataFrame] = None,
          load_to_sheets_flag: bool = False,
          load_to_postgres_flag: bool = False,
          google_sheets_credentials: str = "google-sheets-api.json",
+         google_sheet_id: Optional[str] = None,
+         google_sheet_name: str = "Fashion Products Data",
+         google_worksheet_name: str = "Products",
          db_params: Optional[Dict] = None,
          dry_run: bool = False) -> bool:
     """
@@ -414,6 +421,9 @@ def main(df: Optional[pd.DataFrame] = None,
         load_to_sheets_flag: Whether to load data to Google Sheets
         load_to_postgres_flag: Whether to load data to PostgreSQL
         google_sheets_credentials: Path to Google Sheets API credentials file
+        google_sheet_id: Google Sheets ID (optional)
+        google_sheet_name: Name of the Google Sheet to use/create
+        google_worksheet_name: Name of the worksheet within the sheet
         db_params: PostgreSQL database parameters
         dry_run: If True, validate data but do not save to repositories
         
@@ -513,7 +523,13 @@ def main(df: Optional[pd.DataFrame] = None,
         # 2. Load to Google Sheets
         if load_to_sheets_flag:
             log_message("STEP 2/3: Google Sheets Loading", "PROCESSING", "📊")
-            sheets_success = load_to_google_sheets(df, google_sheets_credentials)
+            sheets_success = load_to_google_sheets(
+                df, 
+                credentials_path=google_sheets_credentials,
+                sheet_name=google_sheet_name,
+                worksheet_name=google_worksheet_name,
+                sheet_id=google_sheet_id  
+            )
             if sheets_success:
                 success_count += 1
         
@@ -559,13 +575,13 @@ def main(df: Optional[pd.DataFrame] = None,
         overall_success = success_count == tasks_count
         
         if overall_success:
+            log_message("LOADING COMPLETE: All repositories successfully updated!", "SUCCESS", "✓")
             print(f"\n{Fore.GREEN}★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★{Style.RESET_ALL}")
-            print(f"{Fore.GREEN}★  LOADING COMPLETE: All repositories successfully updated!  {Style.RESET_ALL}")
             print(f"{Fore.GREEN}★  ETL pipeline execution completed successfully!            {Style.RESET_ALL}")
             print(f"{Fore.GREEN}★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★{Style.RESET_ALL}")
         else:
+            log_message(f"LOADING PARTIAL: {success_count}/{tasks_count} repositories updated.", "WARNING", "⚠️")
             print(f"\n{Fore.YELLOW}⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}⚠️  LOADING PARTIAL: {success_count}/{tasks_count} repositories updated.     {Style.RESET_ALL}")
             print(f"{Fore.YELLOW}⚠️  Please check the logs for error details.                {Style.RESET_ALL}")
             print(f"{Fore.YELLOW}⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️{Style.RESET_ALL}")
         
@@ -576,10 +592,8 @@ def main(df: Optional[pd.DataFrame] = None,
         import traceback
         traceback.print_exc()
         return False
-
-if __name__ == "__main__":
-    import argparse
     
+def parse_args():
     parser = argparse.ArgumentParser(description='Load transformed fashion product data to repositories.')
     parser.add_argument('--input', '-i', help='Input CSV file path')
     parser.add_argument('--csv-output', '-o', default='products.csv', help='Output CSV file path')
@@ -587,6 +601,12 @@ if __name__ == "__main__":
                         default='csv', help='Target repositories to load data (default: csv)')
     parser.add_argument('--google-creds', '-g', default='google-sheets-api.json', 
                         help='Google Sheets API credentials file')
+    parser.add_argument('--google-sheet-id', '--sheet-id', 
+                        help='Google Sheets ID (optional, will create/search by name if not provided)')
+    parser.add_argument('--sheet-name', default='Fashion Products Data',
+                        help='Google Sheet name (default: Fashion Products Data)')
+    parser.add_argument('--worksheet-name', default='Products',
+                        help='Worksheet name within the sheet (default: Products)')
     parser.add_argument('--db-host', default='localhost', help='PostgreSQL host')
     parser.add_argument('--db-port', default='5432', help='PostgreSQL port')
     parser.add_argument('--db-name', default='fashion_data', help='PostgreSQL database name')
@@ -594,8 +614,10 @@ if __name__ == "__main__":
     parser.add_argument('--db-pass', default='postgres', help='PostgreSQL password')
     parser.add_argument('--dry-run', action='store_true', 
                       help='Validate data but do not save to repositories (for testing)')
-    
-    args = parser.parse_args()
+    return parser.parse_args()
+
+if __name__ == "__main__":
+    args = parse_args()
     
     # Determine which repositories to use
     load_to_csv = args.repositories in ['csv', 'all']
@@ -618,6 +640,9 @@ if __name__ == "__main__":
         load_to_sheets_flag=load_to_sheets,
         load_to_postgres_flag=load_to_postgres,
         google_sheets_credentials=args.google_creds,
+        google_sheet_id=args.google_sheet_id,
+        google_sheet_name=args.sheet_name,
+        google_worksheet_name=args.worksheet_name,
         db_params=db_params,
         dry_run=args.dry_run
     )

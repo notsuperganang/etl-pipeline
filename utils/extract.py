@@ -77,8 +77,22 @@ def show_spinner(seconds, message):
 
 # Function to display progress bar
 def show_progress_bar(current, total, prefix="", suffix="", length=50):
+    """
+    Generate a text-based progress bar.
+    
+    Args:
+        current: Current progress value
+        total: Total value
+        prefix: Text to display before the progress bar
+        suffix: Text to display after the progress bar
+        length: Length of the progress bar in characters
+        
+    Returns:
+        Formatted progress bar string
+    """
     percent = (current / total) * 100 if total > 0 else 0
-    filled_length = int(length * current // total)
+    # Fix untuk zero division error
+    filled_length = int(length * current / total) if total > 0 else 0
     bar = Fore.GREEN + '█' * filled_length + Fore.WHITE + '░' * (length - filled_length)
     return f"{prefix} [{bar}{Style.RESET_ALL}] {current}/{total} {suffix} ({percent:.1f}%)"
 

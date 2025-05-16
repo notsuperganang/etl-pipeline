@@ -1,1 +1,6 @@
 google-sheets-api.json
+.pytest_cache/
+htmlcov
+tests/__pycache__/
+utils/__pycache__/
+.coverage
