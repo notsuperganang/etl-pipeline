@@ -493,6 +493,17 @@ def find_latest_csv(directory: str = '.', prefix: str = 'fashion_products_') -> 
             
         # Find the most recent file
         latest_csv = max(csv_files, key=os.path.getmtime)
+        
+        # Normalisasi path untuk konsistensi cross-platform
+        # 1. Gunakan os.path.normpath untuk normalisasi umum
+        latest_csv = os.path.normpath(latest_csv)
+        # 2. Ubah backslash ke forward slash untuk konsistensi di semua platform
+        latest_csv = latest_csv.replace('\\', '/')
+        
+        # Pastikan format path konsisten dengan prefix ./ jika diperlukan
+        if directory == '.' and not latest_csv.startswith('./'):
+            latest_csv = './' + latest_csv
+            
         return latest_csv
         
     except Exception as e:

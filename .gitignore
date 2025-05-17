@@ -4,3 +4,5 @@ htmlcov
 tests/__pycache__/
 utils/__pycache__/
 .coverage
+submission/
+submission.zip

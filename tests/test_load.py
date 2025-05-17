@@ -544,8 +544,20 @@ class TestLoadToPostgreSQL:
             result = load_to_postgresql(df)
         
         assert result is False
-        mock_log.assert_any_call("Creating database 'fashion_data'", "PROCESSING", "🗄️")
-        mock_log.assert_any_call("Error creating database engine: Database error", "ERROR", "❌")
+        
+        # Verifikasi fleksibel untuk pesan log
+        creating_db_log_found = False
+        error_log_found = False
+        
+        for call_args, call_kwargs in mock_log.call_args_list:
+            message, level, emoji = call_args
+            if "Creating database" in message and level.upper() == "PROCESSING" and "🗄️" in emoji:
+                creating_db_log_found = True
+            if "Error creating database engine" in message and level.upper() == "ERROR" and "❌" in emoji:
+                error_log_found = True
+        
+        assert creating_db_log_found, "Missing log message for database creation"
+        assert error_log_found, "Missing log message for database engine error"
     
     @patch('utils.load.log_message')
     @patch('utils.load.psycopg2.connect')

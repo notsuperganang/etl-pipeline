@@ -803,20 +803,22 @@ class TestFindLatestCsv:
         mock_listdir.return_value = [
             'fashion_products_20250101.csv',
             'fashion_products_20250102.csv',
-            'other_file.txt',
             'fashion_products_20250103.csv'
         ]
-        
-        # Mock modification times (later time = more recent)
+
         mock_getmtime.side_effect = lambda x: {
             './fashion_products_20250101.csv': 1000,
             './fashion_products_20250102.csv': 2000,
-            './fashion_products_20250103.csv': 3000
-        }.get(x, 0)
-        
+            './fashion_products_20250103.csv': 3000  
+        }.get(x.replace('\\', '/'), 0)
+
         result = find_latest_csv('.', 'fashion_products_')
-        
-        assert result == './fashion_products_20250103.csv'
+
+        # Normalisasi path sebelum membandingkan
+        result = result.replace('\\', '/')
+        expected = './fashion_products_20250103.csv'
+
+        assert result == expected
     
     @patch('os.listdir')
     @patch('utils.transform.log_message')

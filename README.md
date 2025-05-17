@@ -84,7 +84,7 @@ graph LR
 
 ### Prerequisites
 
-- **Python 3.12+** 
+- **Python 3.9+** 
 - **pip** package manager
 - **Internet connection** for web scraping
 - **PostgreSQL** (optional, for database output)
