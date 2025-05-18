@@ -51,7 +51,7 @@
 - **Modular Design**: Separate extract, transform, and load modules
 - **Error Handling**: Comprehensive error management and retry mechanisms
 - **Progress Tracking**: Real-time progress bars and colored logging
-- **Unit Testing**: 90%+ test coverage with pytest
+- **Unit Testing**: 100%+ test coverage with pytest
 
 🚀 **Advanced Features**
 - **Configurable Exchange Rates**: Dynamic USD to IDR conversion
